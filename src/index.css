@@ -1,0 +1,58 @@
+@import './tokens/_generated.css';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base ───────────────────────────────────────────────────────────────── */
+
+html {
+  /* Honour user system preference until they pick a theme */
+  color-scheme: light dark;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: rgb(var(--color-surface-canvas));
+  color: rgb(var(--color-text-primary));
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  margin: 0;
+}
+
+/* All numerals tabular by default — section 3.3 of the design system */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Focus ──────────────────────────────────────────────────────────────── */
+
+*:focus { outline: none; }
+
+*:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px rgb(var(--color-surface-canvas)),
+    0 0 0 4px rgb(var(--color-focus-ring));
+  border-radius: 6px;
+}
+
+/* ─── Reduced motion ─────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 120ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 120ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── Selection ──────────────────────────────────────────────────────────── */
+
+::selection {
+  background-color: rgb(var(--color-action-primary) / 0.2);
+}
