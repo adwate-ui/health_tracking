@@ -40,3 +40,7 @@ Thumbs.db
 # Supabase
 supabase/.branches
 supabase/.temp
+
+# Agent reference files
+project_plan.txt
+design_system.txt

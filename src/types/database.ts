@@ -196,6 +196,7 @@ export interface Database {
           waist_cm: number | null;
           hips_cm: number | null;
           body_fat_pct: number | null;
+          photo_path: string | null;
           notes: string | null;
           created_at: string;
           updated_at: string;
@@ -210,6 +211,7 @@ export interface Database {
           waist_cm?: number | null;
           hips_cm?: number | null;
           body_fat_pct?: number | null;
+          photo_path?: string | null;
           notes?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -224,6 +226,7 @@ export interface Database {
           waist_cm?: number | null;
           hips_cm?: number | null;
           body_fat_pct?: number | null;
+          photo_path?: string | null;
           notes?: string | null;
           updated_at?: string;
         };

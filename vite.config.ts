@@ -27,6 +27,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        importScripts: ['/push-sw.js'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/world\.openfoodfacts\.org\/.*/i,
@@ -44,6 +45,18 @@ export default defineConfig({
   ],
   resolve: {
     alias: { '@': resolve(__dirname, 'src') },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-charts': ['recharts'],
+          'vendor-query': ['@tanstack/react-query'],
+        },
+      },
+    },
   },
   server: { port: 5173 },
 });

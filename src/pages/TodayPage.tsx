@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { IconPlus } from '@tabler/icons-react';
 import { Button } from '@/components/Button';
@@ -7,6 +7,12 @@ import { MetricCard } from '@/components/MetricCard';
 import { useAuth } from '@/lib/auth';
 import { useTargets } from '@/hooks/useProfile';
 import { useDailyLog, useUpsertDailyLog } from '@/hooks/useDailyLog';
+import { FoodSearch } from '@/components/FoodSearch';
+import type { FoodSearchResult } from '@/hooks/useFoodSearch';
+import { supabase } from '@/lib/supabase';
+import { useQueryClient } from '@tanstack/react-query';
+
+import { Navigation } from '@/components/Navigation';
 
 function classifyState(current: number | null | undefined, target: number | null | undefined, kind: 'over' | 'under') {
   if (current == null || !target) return 'logged' as const;
@@ -26,20 +32,64 @@ function classifyState(current: number | null | undefined, target: number | null
 export function TodayPage() {
   const { user } = useAuth();
   const today = new Date();
+  const todayISO = format(today, 'yyyy-MM-dd');
   const { data: targets } = useTargets(user?.id);
   const { data: log } = useDailyLog(user?.id, today);
   const upsertLog = useUpsertDailyLog();
+  const qc = useQueryClient();
+
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   if (!user) return null;
 
+  async function handleAddFood(food: FoodSearchResult, grams: number) {
+    const defaultLog = {
+      id: '', user_id: user!.id, log_date: todayISO, 
+      calories: null, protein_g: null, fibre_g: null, water_ml: null, steps: null, gym_session: false, notes: null, created_at: '', updated_at: ''
+    };
+    const currentLog = log || defaultLog;
+    const updatedLog = await upsertLog.mutateAsync({
+      ...currentLog,
+      calories: (currentLog.calories || 0) + (food.calories_100g ? Math.round((food.calories_100g * grams) / 100) : 0),
+      protein_g: (currentLog.protein_g || 0) + (food.protein_100g ? (food.protein_100g * grams) / 100 : 0),
+      fibre_g: (currentLog.fibre_g || 0) + (food.fibre_100g ? (food.fibre_100g * grams) / 100 : 0),
+    });
+
+    // Create the food entry
+    const { error } = await supabase.from('food_entries').insert({
+      user_id: user!.id,
+      log_id: updatedLog.id,
+      source: food.source,
+      source_id: food.id,
+      name: food.name,
+      grams: grams,
+      calories: food.calories_100g ? (food.calories_100g * grams) / 100 : null,
+      protein_g: food.protein_100g ? (food.protein_100g * grams) / 100 : null,
+      fibre_g: food.fibre_100g ? (food.fibre_100g * grams) / 100 : null,
+      fat_g: food.fat_100g ? (food.fat_100g * grams) / 100 : null,
+      carbs_g: food.carbs_100g ? (food.carbs_100g * grams) / 100 : null,
+    });
+
+    if (error) {
+      console.error('Failed to insert food entry', error);
+      alert('Failed to log food.');
+    } else {
+      // Invalidate to fetch fresh totals if needed, though mutation already updates log
+      qc.invalidateQueries({ queryKey: ['daily-log', user!.id, todayISO] });
+    }
+  }
+
   return (
-    <div className="px-4 py-6 max-w-2xl mx-auto pb-24">
-      <header className="mb-6">
-        <p className="text-eyebrow text-text-tertiary uppercase mb-1">
-          {format(today, 'EEEE, d MMMM')}
-        </p>
-        <h1 className="text-h1 text-text-primary">Today</h1>
-      </header>
+    <>
+      <Navigation />
+      <div className="px-4 py-6 max-w-2xl mx-auto pb-24 sm:pt-20">
+        <header className="mb-6">
+          <p className="text-eyebrow text-text-tertiary uppercase mb-1">
+            {format(today, 'EEEE, d MMMM')}
+          </p>
+          <h1 className="text-h1 text-text-primary">Today</h1>
+        </header>
+
 
       <div className="grid grid-cols-2 gap-3 mb-4">
         <MetricCard
@@ -72,15 +122,15 @@ export function TodayPage() {
         />
       </div>
 
-      <DailyEntryForm log={log} userId={user.id} todayISO={format(today, 'yyyy-MM-dd')} onSave={(updates) => upsertLog.mutate(updates)} />
+      <DailyEntryForm log={log} userId={user.id} todayISO={todayISO} onSave={(updates) => upsertLog.mutate(updates)} />
 
-      <Button variant="primary" size="lg" fullWidth leadingIcon={<IconPlus size={16} />} className="mt-4" disabled>
+      <Button variant="primary" size="lg" fullWidth leadingIcon={<IconPlus size={16} />} className="mt-4" onClick={() => setIsSearchOpen(true)}>
         Log a meal
       </Button>
-      <p className="text-small text-text-tertiary text-center mt-2">
-        Food search arrives in iteration 2.
-      </p>
+
+      <FoodSearch isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} onAdd={handleAddFood} />
     </div>
+    </>
   );
 }
 
@@ -98,6 +148,17 @@ function DailyEntryForm({ log, userId, todayISO, onSave }: DailyEntryFormProps) 
   const [water, setWater] = useState(log?.water_ml?.toString() ?? '');
   const [steps, setSteps] = useState(log?.steps?.toString() ?? '');
 
+  // Sync state when log updates from external sources (like FoodSearch)
+  // We only do this if the values from the log don't match what we have, 
+  // to avoid clearing user's ongoing typing, but realistically a full sync is safer here.
+  useEffect(() => {
+    setCalories(log?.calories?.toString() ?? '');
+    setProtein(log?.protein_g?.toString() ?? '');
+    setFibre(log?.fibre_g?.toString() ?? '');
+    setWater(log?.water_ml?.toString() ?? '');
+    setSteps(log?.steps?.toString() ?? '');
+  }, [log]);
+
   function handleSave() {
     onSave({
       user_id: userId,
@@ -112,7 +173,7 @@ function DailyEntryForm({ log, userId, todayISO, onSave }: DailyEntryFormProps) 
 
   return (
     <section className="bg-surface-raised border border-border-subtle rounded-lg p-4">
-      <h2 className="text-h3 text-text-primary mb-3">Quick log</h2>
+      <h2 className="text-h3 text-text-primary mb-3">Quick log / Overrides</h2>
       <div className="grid grid-cols-2 gap-3">
         <Input label="Calories" type="number" inputMode="numeric" value={calories} onChange={(e) => setCalories(e.target.value)} />
         <Input label="Protein (g)" type="number" inputMode="numeric" value={protein} onChange={(e) => setProtein(e.target.value)} />
@@ -121,8 +182,9 @@ function DailyEntryForm({ log, userId, todayISO, onSave }: DailyEntryFormProps) 
         <Input label="Steps" type="number" inputMode="numeric" value={steps} onChange={(e) => setSteps(e.target.value)} />
       </div>
       <Button variant="secondary" onClick={handleSave} className="mt-3" fullWidth>
-        Save today
+        Save overrides
       </Button>
     </section>
   );
 }
+
