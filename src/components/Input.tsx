@@ -6,11 +6,12 @@ interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'>
   helperText?: string;
   errorMessage?: string | undefined;
   required?: boolean;
+  leadingIcon?: ReactNode;
   trailingAffix?: ReactNode;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, helperText, errorMessage, required, trailingAffix, id, className = '', ...rest },
+  { label, helperText, errorMessage, required, leadingIcon, trailingAffix, id, className = '', ...rest },
   ref,
 ) {
   const generatedId = useId();
@@ -27,6 +28,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         </label>
       )}
       <div className="relative">
+        {leadingIcon && (
+          <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-text-tertiary pointer-events-none">
+            {leadingIcon}
+          </div>
+        )}
         <input
           ref={ref}
           id={inputId}
@@ -39,6 +45,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             disabled:opacity-40 disabled:cursor-not-allowed
             placeholder:text-text-tertiary
             ${hasError ? 'border-action-danger' : ''}
+            ${leadingIcon ? 'pl-10' : ''}
             ${trailingAffix ? 'pr-10' : ''}
             ${className}
           `}
@@ -61,3 +68,4 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     </div>
   );
 });
+

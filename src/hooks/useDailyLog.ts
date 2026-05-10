@@ -64,3 +64,34 @@ export function useRecentDailyLogs(userId: string | undefined, days = 30) {
     enabled: Boolean(userId),
   });
 }
+
+export type FoodEntryRow = Database['public']['Tables']['food_entries']['Row'];
+
+export function useRecentFoods(userId: string | undefined, limit = 20) {
+  return useQuery<FoodEntryRow[]>({
+    queryKey: ['recent-foods', userId, limit],
+    queryFn: async () => {
+      if (!userId) return [];
+      const { data, error } = await supabase
+        .from('food_entries')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(100); // Fetch more to allow deduping
+      if (error) throw error;
+      
+      const uniqueFoods: FoodEntryRow[] = [];
+      const seenIds = new Set<string>();
+      for (const entry of (data ?? [])) {
+        if (!seenIds.has(entry.name)) { // Deduping by name as source_id might be null for manual entries
+          seenIds.add(entry.name);
+          uniqueFoods.push(entry);
+        }
+        if (uniqueFoods.length >= limit) break;
+      }
+      return uniqueFoods;
+    },
+    enabled: Boolean(userId),
+  });
+}
+
