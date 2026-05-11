@@ -1,0 +1,2 @@
+json_key_file("fastlane/play_store_key.json")
+package_name("app.totalmacro")

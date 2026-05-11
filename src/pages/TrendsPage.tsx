@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { format, subDays, differenceInDays } from 'date-fns';
+import { format, subDays, differenceInDays, addWeeks } from 'date-fns';
 import { BarChart, Bar, LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts';
 import { useAuth } from '@/lib/auth';
 import { useRecentDailyLogs } from '@/hooks/useDailyLog';
@@ -71,6 +71,41 @@ export function TrendsPage() {
       isSurplus: dailyDeficit < 0,
     };
   }, [logs, targets]);
+
+  // ─── Goal arrival projection ─────────────────────────────────────
+  const goalArrival = useMemo(() => {
+    if (!targets?.goal_weight_kg || !deficitSummary) return null;
+
+    const currentWeight = checkins?.find(c => c.weight_kg != null)?.weight_kg;
+    if (currentWeight == null) return null;
+
+    const goalWeight = targets.goal_weight_kg;
+    const weeklyRate = deficitSummary.projectedWeeklyLossKg; // kg/week, signed (negative = loss)
+    const weightDelta = currentWeight - goalWeight; // positive = need to lose, negative = need to gain
+
+    // Already at goal
+    if (Math.abs(weightDelta) < 0.1) {
+      return { status: 'at-goal' as const, currentWeight, goalWeight, weeklyRate };
+    }
+
+    // Rate is zero or wrong direction
+    const movingTowardGoal = (weightDelta > 0 && weeklyRate > 0) || (weightDelta < 0 && weeklyRate < 0);
+    if (!movingTowardGoal || Math.abs(weeklyRate) < 0.01) {
+      return { status: 'wrong-direction' as const, currentWeight, goalWeight, weeklyRate };
+    }
+
+    const weeksToGoal = Math.abs(weightDelta) / Math.abs(weeklyRate);
+    const arrivalDate = addWeeks(new Date(), weeksToGoal);
+
+    return {
+      status: 'on-track' as const,
+      currentWeight,
+      goalWeight,
+      weeklyRate,
+      arrivalDate,
+      weeksToGoal: Math.round(weeksToGoal),
+    };
+  }, [targets, deficitSummary, checkins]);
 
   // ─── Plateau detection ───────────────────────────────────────────
   const plateauNarrative = useMemo(() => {
@@ -190,6 +225,56 @@ export function TrendsPage() {
                     <> — projecting roughly {Math.abs(deficitSummary.projectedWeeklyLossKg).toFixed(2)}{'\u00a0'}kg {deficitSummary.isSurplus ? 'gain' : 'loss'} per week</>
                   )}.
                 </p>
+              </Card>
+            </section>
+          )}
+
+          {/* ─── Goal Arrival ───────────────────────────────────── */}
+          {goalArrival && (
+            <section>
+              <h2 className="text-h3 text-text-primary mb-1">Goal arrival</h2>
+              <Card className="p-4">
+                <div className="flex flex-col divide-y divide-border-subtle">
+                  <div className="flex justify-between items-baseline py-2">
+                    <span className="text-small text-text-tertiary">Goal weight</span>
+                    <span className="text-body font-medium tabular-nums text-text-primary">
+                      {goalArrival.goalWeight.toFixed(1)}&nbsp;kg
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline py-2">
+                    <span className="text-small text-text-tertiary">Current weight</span>
+                    <span className="text-body font-medium tabular-nums text-text-primary">
+                      {goalArrival.currentWeight.toFixed(1)}&nbsp;kg
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline py-2">
+                    <span className="text-small text-text-tertiary">Rate</span>
+                    <span className="text-body font-medium tabular-nums text-text-primary">
+                      {goalArrival.weeklyRate > 0 ? '+' : ''}{goalArrival.weeklyRate.toFixed(2)}&nbsp;kg/week
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline py-2">
+                    <span className="text-small text-text-tertiary">Projected arrival</span>
+                    <span className="text-body font-medium text-text-primary">
+                      {goalArrival.status === 'at-goal' && 'At goal weight'}
+                      {goalArrival.status === 'wrong-direction' && (
+                        <span className="text-text-tertiary text-small">
+                          {Math.abs(goalArrival.weeklyRate) < 0.01
+                            ? 'No measurable rate — log more days'
+                            : 'Current trend is away from goal'}
+                        </span>
+                      )}
+                      {goalArrival.status === 'on-track' && (
+                        <>
+                          {format(goalArrival.arrivalDate, 'd MMMM yyyy')}
+                          <span className="text-text-tertiary text-small ml-2">
+                            ({goalArrival.weeksToGoal}&nbsp;weeks)
+                          </span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                </div>
               </Card>
             </section>
           )}

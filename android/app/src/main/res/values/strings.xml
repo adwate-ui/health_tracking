@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TotalMacro</string>
+    <string name="title_activity_main">TotalMacro</string>
+    <string name="package_name">app.totalmacro</string>
+    <string name="custom_url_scheme">app.totalmacro</string>
+</resources>

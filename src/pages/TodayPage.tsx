@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { IconPlus } from '@tabler/icons-react';
+import { IconPlus, IconBookmark } from '@tabler/icons-react';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { MetricCard } from '@/components/MetricCard';
@@ -8,11 +8,14 @@ import { useAuth } from '@/lib/auth';
 import { useTargets } from '@/hooks/useProfile';
 import { useDailyLog, useUpsertDailyLog } from '@/hooks/useDailyLog';
 import { FoodSearch } from '@/components/FoodSearch';
+import { MealTemplateSheet } from '@/components/MealTemplateSheet';
 import type { FoodSearchResult } from '@/hooks/useFoodSearch';
+import type { FoodEntryRow } from '@/hooks/useDailyLog';
 import { supabase } from '@/lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Navigation } from '@/components/Navigation';
+import { isNativePlatform, getNativeStepCount } from '@/lib/healthPlatform';
 
 function classifyState(current: number | null | undefined, target: number | null | undefined, kind: 'over' | 'under') {
   if (current == null || !target) return 'logged' as const;
@@ -39,6 +42,35 @@ export function TodayPage() {
   const qc = useQueryClient();
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isTemplateOpen, setIsTemplateOpen] = useState(false);
+  const [todayEntries, setTodayEntries] = useState<FoodEntryRow[]>([]);
+
+  // Keep today's food entries fresh for the template sheet
+  useEffect(() => {
+    if (!user || !log?.id) { setTodayEntries([]); return; }
+    supabase
+      .from('food_entries')
+      .select('*')
+      .eq('log_id', log.id)
+      .order('consumed_at', { ascending: true })
+      .then(({ data }) => setTodayEntries(data ?? []));
+  }, [user, log?.id]);
+
+  // Auto-populate steps from HealthKit / Health Connect on native platforms
+  useEffect(() => {
+    if (!isNativePlatform() || !user || log?.steps != null) return;
+    getNativeStepCount(today).then(steps => {
+      if (steps != null && steps > 0) {
+        upsertLog.mutate({
+          user_id: user.id,
+          log_date: todayISO,
+          steps,
+        });
+      }
+    });
+    // Run once on mount — log?.steps included so we don't overwrite manual entries
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, todayISO]);
 
   if (!user) return null;
 
@@ -127,8 +159,17 @@ export function TodayPage() {
       <Button variant="primary" size="lg" fullWidth leadingIcon={<IconPlus size={16} />} className="mt-4" onClick={() => setIsSearchOpen(true)}>
         Log a meal
       </Button>
+      <Button variant="secondary" size="lg" fullWidth leadingIcon={<IconBookmark size={16} />} className="mt-2" onClick={() => setIsTemplateOpen(true)}>
+        Templates
+      </Button>
 
       <FoodSearch isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} onAdd={handleAddFood} />
+      <MealTemplateSheet
+        isOpen={isTemplateOpen}
+        onClose={() => setIsTemplateOpen(false)}
+        todayEntries={todayEntries}
+        onLogFood={handleAddFood}
+      />
     </div>
     </>
   );
