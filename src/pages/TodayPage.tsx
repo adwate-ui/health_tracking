@@ -13,7 +13,6 @@ import type { FoodSearchResult } from '@/hooks/useFoodSearch';
 import type { FoodEntryRow } from '@/hooks/useDailyLog';
 import { supabase } from '@/lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
-import { Navigation } from '@/components/Navigation';
 import { isNativePlatform, getNativeStepCount } from '@/lib/healthPlatform';
 
 function classifyState(current: number | null | undefined, target: number | null | undefined, kind: 'over' | 'under') {
@@ -126,9 +125,7 @@ export function TodayPage() {
   }
 
   return (
-    <>
-      <Navigation />
-      <div className="px-4 py-6 max-w-2xl mx-auto pb-28 sm:pt-20">
+    <div className="px-4 py-6 max-w-2xl mx-auto pb-28 sm:pt-20">
 
         {/* ─── Header ─────────────────────────────────────────── */}
         <header className="mb-6 flex items-start justify-between gap-4">
@@ -254,8 +251,7 @@ export function TodayPage() {
           </>
         )}
 
-      </div>
-    </>
+    </div>
   );
 }
 

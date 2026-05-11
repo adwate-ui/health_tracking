@@ -1,148 +1,273 @@
 import { useMemo } from 'react';
 import { format, subDays, differenceInDays, addWeeks } from 'date-fns';
-import { BarChart, Bar, LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts';
+import {
+  AreaChart, Area, Bar, ComposedChart, Line,
+  LineChart, ResponsiveContainer, XAxis, YAxis, Tooltip,
+  CartesianGrid, ReferenceLine,
+} from 'recharts';
 import { useAuth } from '@/lib/auth';
 import { useRecentDailyLogs } from '@/hooks/useDailyLog';
 import { useWeeklyCheckins } from '@/hooks/useWeeklyCheckins';
 import { useTargets } from '@/hooks/useProfile';
-import { Card } from '@/components/Card';
+import {
+  TrendChart, ChartTooltip, StatItem,
+  sharedXAxis, sharedYAxis, sharedGrid,
+} from '@/components/TrendChart';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function movingAverage(values: number[], window = 7): (number | null)[] {
+  return values.map((_, i) => {
+    const start = Math.max(0, i - window + 1);
+    const slice = values.slice(start, i + 1).filter(v => v > 0);
+    if (slice.length < Math.min(3, window)) return null;
+    return slice.reduce((a, b) => a + b, 0) / slice.length;
+  });
+}
+
+function avgOf(values: number[]): number {
+  const valid = values.filter(v => v > 0);
+  return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+}
+
+function hitRate(values: number[], target: number): number {
+  const valid = values.filter(v => v > 0);
+  if (!valid.length) return 0;
+  return (valid.filter(v => v >= target).length / valid.length) * 100;
+}
+
+function currentStreak(values: number[], target: number): number {
+  let streak = 0;
+  for (let i = values.length - 1; i >= 0; i--) {
+    const v = values[i] ?? 0;
+    if (v > 0 && v >= target) streak++;
+    else if (v > 0) break;
+  }
+  return streak;
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function TrendsPage() {
   const { user } = useAuth();
-  
-  // We'll look at the last 30 days for the nutrition view
-  const days = 30;
+  const days = 60;
+
   const { data: logs, isLoading: loadingLogs } = useRecentDailyLogs(user?.id, days);
-  const { data: checkins, isLoading: loadingCheckins } = useWeeklyCheckins(user?.id, 12);
+  const { data: checkins, isLoading: loadingCheckins } = useWeeklyCheckins(user?.id, 20);
   const { data: targets } = useTargets(user?.id);
 
   const isLoading = loadingLogs || loadingCheckins;
 
+  // ─── Daily chart data ────────────────────────────────────────────────────
+
   const chartData = useMemo(() => {
-    if (!logs || !targets) return [];
-    
-    // Generate an array of the last 30 days
-    const data = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const date = subDays(new Date(), i);
-      const isoDate = format(date, 'yyyy-MM-dd');
-      const log = logs.find(l => l.log_date === isoDate);
-      data.push({
+    const raw = Array.from({ length: days }, (_, i) => {
+      const date = subDays(new Date(), days - 1 - i);
+      const iso = format(date, 'yyyy-MM-dd');
+      const log = logs?.find(l => l.log_date === iso);
+      return {
         date: format(date, 'MMM d'),
         calories: log?.calories ?? 0,
         protein: log?.protein_g ?? 0,
-      });
-    }
-    return data;
-  }, [logs, targets]);
+        fibre: log?.fibre_g ?? 0,
+        water: log?.water_ml ?? 0,
+        steps: log?.steps ?? 0,
+        gym: log?.gym_session ? 1 : 0,
+      };
+    });
 
-  const weightData = useMemo(() => {
+    const calMA = movingAverage(raw.map(d => d.calories));
+    const protMA = movingAverage(raw.map(d => d.protein));
+    const stepsMA = movingAverage(raw.map(d => d.steps));
+
+    return raw.map((d, i) => ({
+      ...d,
+      calMA: calMA[i],
+      protMA: protMA[i],
+      stepsMA: stepsMA[i],
+    }));
+  }, [logs, days]);
+
+  // Last 30 days slice for bar charts (less visual clutter)
+  const recentData = chartData.slice(-30);
+
+  // ─── Body data ───────────────────────────────────────────────────────────
+
+  const bodyData = useMemo(() => {
     if (!checkins) return [];
     return checkins
       .slice()
       .reverse()
-      .filter(c => c.weight_kg != null)
       .map(c => ({
         week: format(new Date(c.week_start), 'MMM d'),
-        weight: c.weight_kg!,
+        weight: c.weight_kg,
+        bodyFat: c.body_fat_pct,
+        waist: c.waist_cm,
+        hips: c.hips_cm,
+        chest: c.chest_cm,
+        neck: c.neck_cm,
       }));
   }, [checkins]);
 
-  // ─── Caloric deficit calculation ─────────────────────────────────
-  const deficitSummary = useMemo(() => {
-    if (!logs || !targets?.daily_calories) return null;
+  // ─── Availability flags ──────────────────────────────────────────────────
 
-    const daysWithData = logs.filter(l => l.calories != null && l.calories > 0);
-    if (daysWithData.length < 3) return null;
+  const hasWeight  = bodyData.filter(d => d.weight  != null).length >= 2;
+  const hasBodyFat = bodyData.filter(d => d.bodyFat != null).length >= 2;
+  const hasMeasurements = bodyData.some(d => d.waist != null || d.hips != null);
+  const hasCalories = chartData.some(d => d.calories > 0);
+  const hasProtein  = chartData.some(d => d.protein  > 0);
+  const hasFibre    = chartData.some(d => d.fibre    > 0);
+  const hasWater    = chartData.some(d => d.water    > 0);
+  const hasSteps    = chartData.some(d => d.steps    > 0);
+  const gymSessions = chartData.reduce((n, d) => n + d.gym, 0);
 
-    const avgCalories = daysWithData.reduce((sum, l) => sum + (l.calories ?? 0), 0) / daysWithData.length;
-    const dailyDeficit = targets.daily_calories - avgCalories;
-    const weeklyDeficit = dailyDeficit * 7;
-    // ~7 700 kcal per kg of body fat
-    const projectedWeeklyLossKg = weeklyDeficit / 7700;
+  // ─── Per-metric stats ────────────────────────────────────────────────────
 
-    return {
-      avgCalories: Math.round(avgCalories),
-      target: targets.daily_calories,
-      dailyDeficit: Math.round(dailyDeficit),
-      weeklyDeficit: Math.round(weeklyDeficit),
-      projectedWeeklyLossKg: Math.abs(projectedWeeklyLossKg) < 0.01 ? 0 : projectedWeeklyLossKg,
-      daysTracked: daysWithData.length,
-      isSurplus: dailyDeficit < 0,
-    };
-  }, [logs, targets]);
+  const calStats: StatItem[] = useMemo(() => {
+    if (!hasCalories) return [];
+    const vals = chartData.map(d => d.calories);
+    const avg = avgOf(vals);
+    const tgt = targets?.daily_calories;
+    const days30 = recentData.filter(d => d.calories > 0).length;
+    const hit = tgt ? recentData.filter(d => d.calories > 0 && d.calories <= tgt).length : null;
+    const streak = tgt ? currentStreak(chartData.slice(-14).map(d => d.calories), 0) : null;
+    return [
+      { label: 'Avg / day', value: `${Math.round(avg).toLocaleString()} kcal` },
+      ...(tgt ? [{ label: 'On target', value: hit != null ? `${hit} / ${days30} days` : '—' }] : []),
+      ...(streak != null && streak > 1 ? [{ label: 'Streak', value: `${streak} days`, positive: true }] : []),
+    ];
+  }, [chartData, recentData, targets, hasCalories]);
 
-  // ─── Goal arrival projection ─────────────────────────────────────
-  const goalArrival = useMemo(() => {
-    if (!targets?.goal_weight_kg || !deficitSummary) return null;
+  const protStats: StatItem[] = useMemo(() => {
+    if (!hasProtein) return [];
+    const vals = chartData.map(d => d.protein);
+    const avg = avgOf(vals);
+    const tgt = targets?.daily_protein_g;
+    const rate = tgt ? hitRate(recentData.map(d => d.protein), tgt) : null;
+    const streak = tgt ? currentStreak(vals.slice(-14), tgt) : null;
+    return [
+      { label: 'Avg / day', value: `${Math.round(avg)} g` },
+      ...(rate != null ? [{ label: 'Hit rate', value: `${Math.round(rate)}%`, positive: rate >= 80 }] : []),
+      ...(streak != null && streak > 1 ? [{ label: 'Streak', value: `${streak} days`, positive: true }] : []),
+    ];
+  }, [chartData, recentData, targets, hasProtein]);
 
-    const currentWeight = checkins?.find(c => c.weight_kg != null)?.weight_kg;
-    if (currentWeight == null) return null;
+  const fibreStats: StatItem[] = useMemo(() => {
+    if (!hasFibre) return [];
+    const vals = chartData.map(d => d.fibre);
+    const avg = avgOf(vals);
+    const tgt = targets?.daily_fibre_g;
+    const rate = tgt ? hitRate(recentData.map(d => d.fibre), tgt) : null;
+    return [
+      { label: 'Avg / day', value: `${Math.round(avg)} g` },
+      ...(rate != null ? [{ label: 'Hit rate', value: `${Math.round(rate)}%`, positive: rate >= 80 }] : []),
+    ];
+  }, [chartData, recentData, targets, hasFibre]);
 
+  const stepsStats: StatItem[] = useMemo(() => {
+    if (!hasSteps) return [];
+    const vals = chartData.map(d => d.steps);
+    const avg = avgOf(vals);
+    const tgt = targets?.daily_steps;
+    const rate = tgt ? hitRate(recentData.map(d => d.steps), tgt) : null;
+    const best = Math.max(...vals.filter(v => v > 0));
+    return [
+      { label: 'Avg / day', value: `${Math.round(avg).toLocaleString()}` },
+      ...(rate != null ? [{ label: 'Hit rate', value: `${Math.round(rate)}%`, positive: rate >= 80 }] : []),
+      { label: 'Best day', value: best.toLocaleString() },
+    ];
+  }, [chartData, recentData, targets, hasSteps]);
+
+  const waterStats: StatItem[] = useMemo(() => {
+    if (!hasWater) return [];
+    const vals = chartData.map(d => d.water);
+    const avg = avgOf(vals);
+    const tgt = targets?.daily_water_ml;
+    const rate = tgt ? hitRate(recentData.map(d => d.water), tgt) : null;
+    return [
+      { label: 'Avg / day', value: `${Math.round(avg / 100) / 10} L` },
+      ...(rate != null ? [{ label: 'Hit rate', value: `${Math.round(rate)}%`, positive: rate >= 80 }] : []),
+    ];
+  }, [chartData, recentData, targets, hasWater]);
+
+  // ─── Weight / body stats & goal projection ───────────────────────────────
+
+  const weightStats: StatItem[] = useMemo(() => {
+    const withWeight = bodyData.filter(d => d.weight != null);
+    if (withWeight.length < 2) return [];
+    const latest = withWeight[withWeight.length - 1]!;
+    const oldest = withWeight[0]!;
+    const change = (latest.weight! - oldest.weight!);
+    const weeksSpan = Math.max(1, withWeight.length - 1);
+    const rate = change / weeksSpan;
+    return [
+      { label: 'Current', value: `${latest.weight!.toFixed(1)} kg` },
+      { label: 'Change', value: `${change >= 0 ? '+' : ''}${change.toFixed(1)} kg`, positive: change <= 0 },
+      { label: 'Rate', value: `${rate >= 0 ? '+' : ''}${rate.toFixed(2)} kg/wk` },
+    ];
+  }, [bodyData]);
+
+  const goalProgress = useMemo(() => {
+    if (!targets?.goal_weight_kg || !targets?.daily_calories) return null;
+    const withWeight = bodyData.filter(d => d.weight != null);
+    if (withWeight.length < 2) return null;
+    const currentWeight = withWeight[withWeight.length - 1]!.weight!;
+    const startWeight = withWeight[0]!.weight!;
     const goalWeight = targets.goal_weight_kg;
-    const weeklyRate = deficitSummary.projectedWeeklyLossKg; // kg/week, signed (negative = loss)
-    const weightDelta = currentWeight - goalWeight; // positive = need to lose, negative = need to gain
+    const totalDelta = Math.abs(startWeight - goalWeight);
+    if (totalDelta < 0.1) return null;
+    const currentDelta = Math.abs(currentWeight - goalWeight);
+    const progressPct = Math.max(0, Math.min(100, ((totalDelta - currentDelta) / totalDelta) * 100));
 
-    // Already at goal
-    if (Math.abs(weightDelta) < 0.1) {
-      return { status: 'at-goal' as const, currentWeight, goalWeight, weeklyRate };
+    // Weekly rate for ETA
+    const weeksSpan = Math.max(1, withWeight.length - 1);
+    const weeklyRate = (withWeight[withWeight.length - 1]!.weight! - withWeight[0]!.weight!) / weeksSpan;
+    const movingTowardGoal = (currentWeight > goalWeight && weeklyRate < 0) || (currentWeight < goalWeight && weeklyRate > 0);
+
+    let eta: Date | null = null;
+    let weeksLeft: number | null = null;
+    if (movingTowardGoal && Math.abs(weeklyRate) > 0.01) {
+      weeksLeft = Math.abs(currentWeight - goalWeight) / Math.abs(weeklyRate);
+      eta = addWeeks(new Date(), weeksLeft);
     }
 
-    // Rate is zero or wrong direction
-    const movingTowardGoal = (weightDelta > 0 && weeklyRate > 0) || (weightDelta < 0 && weeklyRate < 0);
-    if (!movingTowardGoal || Math.abs(weeklyRate) < 0.01) {
-      return { status: 'wrong-direction' as const, currentWeight, goalWeight, weeklyRate };
-    }
+    return { currentWeight, startWeight, goalWeight, progressPct, eta, weeksLeft, movingTowardGoal };
+  }, [bodyData, targets]);
 
-    const weeksToGoal = Math.abs(weightDelta) / Math.abs(weeklyRate);
-    const arrivalDate = addWeeks(new Date(), weeksToGoal);
+  const bodyFatStats: StatItem[] = useMemo(() => {
+    const withBF = bodyData.filter(d => d.bodyFat != null);
+    if (withBF.length < 2) return [];
+    const latest = withBF[withBF.length - 1]!;
+    const oldest = withBF[0]!;
+    const change = (latest.bodyFat! - oldest.bodyFat!);
+    return [
+      { label: 'Current', value: `${latest.bodyFat!.toFixed(1)}%` },
+      { label: 'Change', value: `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`, positive: change <= 0 },
+    ];
+  }, [bodyData]);
 
-    return {
-      status: 'on-track' as const,
-      currentWeight,
-      goalWeight,
-      weeklyRate,
-      arrivalDate,
-      weeksToGoal: Math.round(weeksToGoal),
-    };
-  }, [targets, deficitSummary, checkins]);
+  // ─── Plateau narrative ───────────────────────────────────────────────────
 
-  // ─── Plateau detection ───────────────────────────────────────────
-  const plateauNarrative = useMemo(() => {
-    if (!checkins || checkins.length < 3) return null;
-
-    // Take the most recent checkins that have weight data
-    const withWeight = checkins
-      .filter(c => c.weight_kg != null)
-      .slice(0, 4); // most recent 4 weeks (already desc-sorted)
-
+  const weightInsight = useMemo(() => {
+    const withWeight = bodyData.filter(d => d.weight != null);
     if (withWeight.length < 3) return null;
-
-    const newest = withWeight[0]!;
-    const oldest = withWeight[withWeight.length - 1]!;
-
-    const daySpan = Math.abs(differenceInDays(
-      new Date(newest.week_start),
-      new Date(oldest.week_start),
-    ));
-
+    const recent = withWeight.slice(-4);
+    const oldest = recent[0]!;
+    const newest = recent[recent.length - 1]!;
+    const daySpan = Math.abs(differenceInDays(new Date(oldest.week), new Date(newest.week)));
     if (daySpan < 14) return null;
-
-    const weightChange = newest.weight_kg! - oldest.weight_kg!;
-    const absChange = Math.abs(weightChange);
-
-    // Plateau threshold: less than 0.3 kg change over 14+ days
-    if (absChange < 0.3) {
-      return `Weight is stable over ${daySpan} days (±${absChange.toFixed(1)}\u00a0kg). This could indicate maintenance, water retention, or body recomposition.`;
+    const delta = newest.weight! - oldest.weight!;
+    if (Math.abs(delta) < 0.3) {
+      return `Weight has been stable over ${daySpan} days (±${Math.abs(delta).toFixed(1)} kg) — could indicate maintenance, water retention, or recomposition.`;
     }
-
-    // Not a plateau — provide factual context
-    const direction = weightChange < 0 ? 'down' : 'up';
-    const rate = (absChange / (daySpan / 7)).toFixed(1);
-    return `Weight is trending ${direction} at approximately ${rate}\u00a0kg per week over the last ${daySpan} days.`;
-  }, [checkins]);
+    const direction = delta < 0 ? 'down' : 'up';
+    const rate = (Math.abs(delta) / (daySpan / 7)).toFixed(2);
+    return `Trending ${direction} at ~${rate} kg/week over ${daySpan} days.`;
+  }, [bodyData]);
 
   if (!user) return null;
+
+  const noData = !hasCalories && !hasProtein && !hasWeight;
 
   return (
     <div className="px-4 py-6 max-w-2xl mx-auto pb-28 sm:pt-20">
@@ -152,184 +277,393 @@ export function TrendsPage() {
       </header>
 
       {isLoading ? (
-        <p className="text-text-tertiary">Loading trends...</p>
+        <div className="flex flex-col gap-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-56 bg-surface-raised border border-border-subtle rounded-xl animate-pulse" />
+          ))}
+        </div>
+      ) : noData ? (
+        <div className="bg-surface-raised border border-border-subtle rounded-xl p-8 text-center">
+          <p className="text-body text-text-secondary">Start logging to see your trends here.</p>
+        </div>
       ) : (
-        <div className="flex flex-col gap-6">
-          
-          {/* ─── Weight Trend ──────────────────────────────────── */}
-          <section>
-            <h2 className="text-h3 text-text-primary mb-1">Weight trend</h2>
-            {plateauNarrative && (
-              <p className="text-small text-text-secondary mb-3">{plateauNarrative}</p>
-            )}
-            {!plateauNarrative && (
-              <p className="text-small text-text-tertiary mb-3">
-                {weightData.length > 1 
-                  ? `Your weight has changed by ${((weightData[weightData.length - 1]?.weight || 0) - (weightData[0]?.weight || 0)).toFixed(1)}\u00a0kg over the recorded period.`
-                  : "Keep logging check-ins to see your weight trend."}
+        <div className="flex flex-col gap-5">
+
+          {/* ═══ WEIGHT & BODY ══════════════════════════════════════════ */}
+          {hasWeight && (
+            <section>
+              <p className="text-eyebrow text-text-tertiary uppercase mb-3">Weight & Body</p>
+
+              <TrendChart
+                title="Weight"
+                insight={weightInsight}
+                stats={weightStats}
+                height={220}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={bodyData.filter(d => d.weight != null)} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradWeight" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-action-primary)" stopOpacity={0.22} />
+                        <stop offset="95%" stopColor="var(--color-action-primary)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid {...sharedGrid} />
+                    <XAxis dataKey="week" {...sharedXAxis} />
+                    <YAxis
+                      {...sharedYAxis}
+                      domain={['auto', 'auto']}
+                      tickFormatter={v => `${v}`}
+                    />
+                    <Tooltip
+                      content={<ChartTooltip unit="kg" formatter={(v) => `${v.toFixed(1)} kg`} />}
+                    />
+                    {targets?.goal_weight_kg && (
+                      <ReferenceLine
+                        y={targets.goal_weight_kg}
+                        stroke="var(--color-action-accent)"
+                        strokeDasharray="4 4"
+                        label={{ value: 'Goal', position: 'insideTopRight', fill: 'var(--color-action-accent)', fontSize: 10, fontWeight: 500 }}
+                      />
+                    )}
+                    <Area
+                      type="monotone"
+                      dataKey="weight"
+                      name="Weight"
+                      stroke="var(--color-action-primary)"
+                      strokeWidth={2.5}
+                      fill="url(#gradWeight)"
+                      dot={false}
+                      activeDot={{ r: 4, strokeWidth: 0, fill: 'var(--color-action-primary)' }}
+                      isAnimationActive={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </TrendChart>
+
+              {/* Goal progress bar */}
+              {goalProgress && (
+                <div className="mt-3 bg-surface-raised border border-border-subtle rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-h3 text-text-primary">Goal progress</h3>
+                    {goalProgress.eta && goalProgress.weeksLeft != null && (
+                      <span className="text-small text-text-secondary">
+                        ~{Math.round(goalProgress.weeksLeft)} weeks to go
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Track */}
+                  <div className="relative h-2 bg-surface-canvas rounded-full">
+                    <div
+                      className="absolute h-full rounded-full bg-action-primary transition-all duration-slow"
+                      style={{ width: `${goalProgress.progressPct}%` }}
+                    />
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-surface-raised border-2 border-action-primary -translate-x-1/2"
+                      style={{ left: `${goalProgress.progressPct}%` }}
+                    />
+                  </div>
+
+                  {/* Labels */}
+                  <div className="flex justify-between mt-4">
+                    <div>
+                      <p className="text-eyebrow text-text-tertiary uppercase">Start</p>
+                      <p className="text-h3 tabular-nums text-text-secondary">{goalProgress.startWeight.toFixed(1)} kg</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-eyebrow text-text-tertiary uppercase">Now</p>
+                      <p className="text-h2 tabular-nums text-text-primary font-medium">{goalProgress.currentWeight.toFixed(1)} kg</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-eyebrow text-text-tertiary uppercase">Goal</p>
+                      <p className="text-h3 tabular-nums text-text-secondary">{goalProgress.goalWeight.toFixed(1)} kg</p>
+                    </div>
+                  </div>
+
+                  {goalProgress.eta && (
+                    <p className="text-small text-text-tertiary mt-3 border-t border-border-subtle pt-3">
+                      At current rate, goal reached approximately <span className="text-text-secondary font-medium">{format(goalProgress.eta, 'd MMMM yyyy')}</span>.
+                    </p>
+                  )}
+                  {!goalProgress.movingTowardGoal && (
+                    <p className="text-small text-action-danger mt-3 border-t border-border-subtle pt-3">
+                      Current trend is moving away from goal.
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Body fat */}
+          {hasBodyFat && (
+            <TrendChart title="Body fat" stats={bodyFatStats} height={200}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={bodyData.filter(d => d.bodyFat != null)}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="gradBodyFat" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-action-danger)" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="var(--color-action-danger)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid {...sharedGrid} />
+                  <XAxis dataKey="week" {...sharedXAxis} />
+                  <YAxis {...sharedYAxis} domain={['auto', 'auto']} tickFormatter={v => `${v}%`} />
+                  <Tooltip content={<ChartTooltip formatter={(v) => `${v.toFixed(1)}%`} />} />
+                  <Area
+                    type="monotone"
+                    dataKey="bodyFat"
+                    name="Body fat"
+                    stroke="var(--color-action-danger)"
+                    strokeWidth={2.5}
+                    fill="url(#gradBodyFat)"
+                    dot={false}
+                    activeDot={{ r: 4, strokeWidth: 0, fill: 'var(--color-action-danger)' }}
+                    isAnimationActive={false}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </TrendChart>
+          )}
+
+          {/* Body measurements */}
+          {hasMeasurements && (
+            <TrendChart
+              title="Measurements"
+              stats={(() => {
+                const latest = bodyData.filter(d => d.waist != null || d.hips != null).slice(-1)[0];
+                if (!latest) return [];
+                return [
+                  ...(latest.waist != null ? [{ label: 'Waist', value: `${latest.waist} cm` }] : []),
+                  ...(latest.hips != null  ? [{ label: 'Hips',  value: `${latest.hips} cm`  }] : []),
+                  ...(latest.chest != null ? [{ label: 'Chest', value: `${latest.chest} cm` }] : []),
+                  ...(latest.neck != null  ? [{ label: 'Neck',  value: `${latest.neck} cm`  }] : []),
+                ];
+              })()}
+              height={220}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={bodyData}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid {...sharedGrid} />
+                  <XAxis dataKey="week" {...sharedXAxis} />
+                  <YAxis {...sharedYAxis} domain={['auto', 'auto']} tickFormatter={v => `${v}`} />
+                  <Tooltip content={<ChartTooltip formatter={(v) => `${v.toFixed(1)} cm`} />} />
+                  {bodyData.some(d => d.waist != null) && (
+                    <Line type="monotone" dataKey="waist" name="Waist" stroke="var(--color-action-accent)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                  )}
+                  {bodyData.some(d => d.hips != null) && (
+                    <Line type="monotone" dataKey="hips" name="Hips" stroke="var(--color-action-danger)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                  )}
+                  {bodyData.some(d => d.chest != null) && (
+                    <Line type="monotone" dataKey="chest" name="Chest" stroke="var(--color-action-primary)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                  )}
+                  {bodyData.some(d => d.neck != null) && (
+                    <Line type="monotone" dataKey="neck" name="Neck" stroke="var(--color-border-strong)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </TrendChart>
+          )}
+
+          {/* ═══ NUTRITION ══════════════════════════════════════════════ */}
+          {(hasCalories || hasProtein || hasFibre) && (
+            <section>
+              <p className="text-eyebrow text-text-tertiary uppercase mb-3">Nutrition — last 30 days</p>
+
+              {/* Calories */}
+              {hasCalories && (
+                <TrendChart
+                  title="Calories"
+                  insight={(() => {
+                    const avg = avgOf(recentData.map(d => d.calories));
+                    const tgt = targets?.daily_calories;
+                    if (!tgt) return null;
+                    const diff = Math.round(avg - tgt);
+                    return `${Math.round(avg).toLocaleString()} kcal average — ${Math.abs(diff).toLocaleString()} kcal ${diff > 0 ? 'above' : 'below'} your ${tgt.toLocaleString()} target.`;
+                  })()}
+                  stats={calStats}
+                  height={220}
+                  className="mb-4"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={recentData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid {...sharedGrid} />
+                      <XAxis dataKey="date" {...sharedXAxis} interval={6} />
+                      <YAxis {...sharedYAxis} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v}`} />
+                      <Tooltip content={<ChartTooltip unit="kcal" formatter={(v) => `${Math.round(v).toLocaleString()} kcal`} />} />
+                      {targets?.daily_calories && (
+                        <ReferenceLine
+                          y={targets.daily_calories}
+                          stroke="var(--color-action-accent)"
+                          strokeDasharray="4 4"
+                          label={{ value: 'Target', position: 'insideTopRight', fill: 'var(--color-action-accent)', fontSize: 10, fontWeight: 500 }}
+                        />
+                      )}
+                      <Bar dataKey="calories" name="Calories" fill="var(--color-action-primary)" fillOpacity={0.55} radius={[2, 2, 0, 0]} maxBarSize={18} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="calMA" name="7-day avg" stroke="var(--color-action-primary)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </TrendChart>
+              )}
+
+              {/* Protein */}
+              {hasProtein && (
+                <TrendChart
+                  title="Protein"
+                  insight={(() => {
+                    const avg = avgOf(recentData.map(d => d.protein));
+                    const tgt = targets?.daily_protein_g;
+                    if (!tgt) return `${Math.round(avg)} g average per day.`;
+                    const rate = hitRate(recentData.map(d => d.protein), tgt);
+                    return `${Math.round(avg)} g average — hit ${Math.round(rate)}% of tracked days.`;
+                  })()}
+                  stats={protStats}
+                  height={200}
+                  className="mb-4"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={recentData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gradProt" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--color-action-accent)" stopOpacity={0.22} />
+                          <stop offset="95%" stopColor="var(--color-action-accent)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid {...sharedGrid} />
+                      <XAxis dataKey="date" {...sharedXAxis} interval={6} />
+                      <YAxis {...sharedYAxis} tickFormatter={v => `${v}g`} />
+                      <Tooltip content={<ChartTooltip formatter={(v) => `${Math.round(v)} g`} />} />
+                      {targets?.daily_protein_g && (
+                        <ReferenceLine
+                          y={targets.daily_protein_g}
+                          stroke="var(--color-action-accent)"
+                          strokeDasharray="4 4"
+                          label={{ value: 'Target', position: 'insideTopRight', fill: 'var(--color-action-accent)', fontSize: 10, fontWeight: 500 }}
+                        />
+                      )}
+                      <Bar dataKey="protein" name="Protein" fill="var(--color-action-accent)" fillOpacity={0.5} radius={[2, 2, 0, 0]} maxBarSize={18} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="protMA" name="7-day avg" stroke="var(--color-action-accent)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </TrendChart>
+              )}
+
+              {/* Fibre */}
+              {hasFibre && (
+                <TrendChart
+                  title="Fibre"
+                  stats={fibreStats}
+                  height={200}
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={recentData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gradFibre" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--color-action-primary)" stopOpacity={0.18} />
+                          <stop offset="95%" stopColor="var(--color-action-primary)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid {...sharedGrid} />
+                      <XAxis dataKey="date" {...sharedXAxis} interval={6} />
+                      <YAxis {...sharedYAxis} tickFormatter={v => `${v}g`} />
+                      <Tooltip content={<ChartTooltip formatter={(v) => `${Math.round(v)} g`} />} />
+                      {targets?.daily_fibre_g && (
+                        <ReferenceLine
+                          y={targets.daily_fibre_g}
+                          stroke="var(--color-action-accent)"
+                          strokeDasharray="4 4"
+                          label={{ value: 'Target', position: 'insideTopRight', fill: 'var(--color-action-accent)', fontSize: 10, fontWeight: 500 }}
+                        />
+                      )}
+                      <Area type="monotone" dataKey="fibre" name="Fibre" stroke="var(--color-action-primary)" strokeWidth={2} fill="url(#gradFibre)" dot={false} activeDot={{ r: 3, strokeWidth: 0 }} isAnimationActive={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </TrendChart>
+              )}
+            </section>
+          )}
+
+          {/* ═══ ACTIVITY & HYDRATION ═══════════════════════════════════ */}
+          {(hasSteps || hasWater) && (
+            <section>
+              <p className="text-eyebrow text-text-tertiary uppercase mb-3">
+                Activity & Hydration — last 30 days
+                {gymSessions > 0 && <span className="ml-3 normal-case font-normal text-text-secondary">{gymSessions} gym sessions recorded</span>}
               </p>
-            )}
-            {weightData.length > 0 && (
-              <Card className="h-48 p-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weightData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="week" stroke="var(--color-border-strong)" fontSize={12} tickMargin={8} />
-                    <YAxis domain={['auto', 'auto']} stroke="var(--color-border-strong)" fontSize={12} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)', borderRadius: '8px' }}
-                      itemStyle={{ color: 'var(--color-text-primary)' }}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="weight" 
-                      name="Weight (kg)"
-                      stroke="var(--color-forest-500)" 
-                      strokeWidth={3} 
-                      dot={{ fill: 'var(--color-surface-base)', strokeWidth: 2, r: 4 }}
-                      activeDot={{ r: 6 }}
-                      isAnimationActive={false} 
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </Card>
-            )}
-          </section>
 
-          {/* ─── Caloric Deficit ────────────────────────────────── */}
-          {deficitSummary && (
-            <section>
-              <h2 className="text-h3 text-text-primary mb-1">Energy balance</h2>
-              <Card className="p-4">
-                <div className="grid grid-cols-2 gap-4 mb-3">
-                  <div className="flex flex-col">
-                    <span className="text-eyebrow text-text-tertiary uppercase">Average intake</span>
-                    <span className="text-h2 text-text-primary tabular-nums">
-                      {deficitSummary.avgCalories.toLocaleString()}<span className="text-body text-text-tertiary ml-1">kcal</span>
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-eyebrow text-text-tertiary uppercase">Target</span>
-                    <span className="text-h2 text-text-primary tabular-nums">
-                      {deficitSummary.target.toLocaleString()}<span className="text-body text-text-tertiary ml-1">kcal</span>
-                    </span>
-                  </div>
-                </div>
-                <div className={`flex items-baseline gap-2 rounded-lg p-3 ${deficitSummary.isSurplus ? 'bg-coral-50 dark:bg-coral-900/20' : 'bg-forest-50 dark:bg-forest-900/20'}`}>
-                  <span className={`text-h3 tabular-nums ${deficitSummary.isSurplus ? 'text-coral-600 dark:text-coral-400' : 'text-forest-600 dark:text-forest-400'}`}>
-                    {deficitSummary.isSurplus ? '+' : ''}{deficitSummary.dailyDeficit.toLocaleString()}<span className="text-body ml-1">kcal/day</span>
-                  </span>
-                </div>
-                <p className="text-small text-text-tertiary mt-3">
-                  Over {deficitSummary.daysTracked} tracked days, your weekly {deficitSummary.isSurplus ? 'surplus' : 'deficit'} averages {Math.abs(deficitSummary.weeklyDeficit).toLocaleString()}{'\u00a0'}kcal
-                  {deficitSummary.projectedWeeklyLossKg !== 0 && (
-                    <> — projecting roughly {Math.abs(deficitSummary.projectedWeeklyLossKg).toFixed(2)}{'\u00a0'}kg {deficitSummary.isSurplus ? 'gain' : 'loss'} per week</>
-                  )}.
-                </p>
-              </Card>
+              {/* Steps */}
+              {hasSteps && (
+                <TrendChart
+                  title="Steps"
+                  insight={(() => {
+                    const avg = avgOf(recentData.map(d => d.steps));
+                    const tgt = targets?.daily_steps;
+                    if (!tgt) return `${Math.round(avg).toLocaleString()} steps average per day.`;
+                    const rate = hitRate(recentData.map(d => d.steps), tgt);
+                    return `${Math.round(avg).toLocaleString()} steps average — hit target ${Math.round(rate)}% of tracked days.`;
+                  })()}
+                  stats={stepsStats}
+                  height={220}
+                  className="mb-4"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={recentData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid {...sharedGrid} />
+                      <XAxis dataKey="date" {...sharedXAxis} interval={6} />
+                      <YAxis {...sharedYAxis} tickFormatter={v => v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`} />
+                      <Tooltip content={<ChartTooltip formatter={(v) => v.toLocaleString()} />} />
+                      {targets?.daily_steps && (
+                        <ReferenceLine
+                          y={targets.daily_steps}
+                          stroke="var(--color-action-accent)"
+                          strokeDasharray="4 4"
+                          label={{ value: 'Target', position: 'insideTopRight', fill: 'var(--color-action-accent)', fontSize: 10, fontWeight: 500 }}
+                        />
+                      )}
+                      <Bar dataKey="steps" name="Steps" fill="var(--color-status-on-track-text)" fillOpacity={0.4} radius={[2, 2, 0, 0]} maxBarSize={18} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="stepsMA" name="7-day avg" stroke="var(--color-action-primary)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </TrendChart>
+              )}
+
+              {/* Water */}
+              {hasWater && (
+                <TrendChart title="Water" stats={waterStats} height={200}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={recentData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gradWater" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--color-status-logged-text)" stopOpacity={0.2} />
+                          <stop offset="95%" stopColor="var(--color-status-logged-text)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid {...sharedGrid} />
+                      <XAxis dataKey="date" {...sharedXAxis} interval={6} />
+                      <YAxis {...sharedYAxis} tickFormatter={v => `${Math.round(v / 100) / 10}L`} />
+                      <Tooltip content={<ChartTooltip formatter={(v) => `${Math.round(v / 100) / 10} L`} />} />
+                      {targets?.daily_water_ml && (
+                        <ReferenceLine
+                          y={targets.daily_water_ml}
+                          stroke="var(--color-action-accent)"
+                          strokeDasharray="4 4"
+                          label={{ value: 'Target', position: 'insideTopRight', fill: 'var(--color-action-accent)', fontSize: 10, fontWeight: 500 }}
+                        />
+                      )}
+                      <Area type="monotone" dataKey="water" name="Water" stroke="var(--color-status-logged-text)" strokeWidth={2} fill="url(#gradWater)" dot={false} activeDot={{ r: 3, strokeWidth: 0 }} isAnimationActive={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </TrendChart>
+              )}
             </section>
           )}
-
-          {/* ─── Goal Arrival ───────────────────────────────────── */}
-          {goalArrival && (
-            <section>
-              <h2 className="text-h3 text-text-primary mb-1">Goal arrival</h2>
-              <Card className="p-4">
-                <div className="flex flex-col divide-y divide-border-subtle">
-                  <div className="flex justify-between items-baseline py-2">
-                    <span className="text-small text-text-tertiary">Goal weight</span>
-                    <span className="text-body font-medium tabular-nums text-text-primary">
-                      {goalArrival.goalWeight.toFixed(1)}&nbsp;kg
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-baseline py-2">
-                    <span className="text-small text-text-tertiary">Current weight</span>
-                    <span className="text-body font-medium tabular-nums text-text-primary">
-                      {goalArrival.currentWeight.toFixed(1)}&nbsp;kg
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-baseline py-2">
-                    <span className="text-small text-text-tertiary">Rate</span>
-                    <span className="text-body font-medium tabular-nums text-text-primary">
-                      {goalArrival.weeklyRate > 0 ? '+' : ''}{goalArrival.weeklyRate.toFixed(2)}&nbsp;kg/week
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-baseline py-2">
-                    <span className="text-small text-text-tertiary">Projected arrival</span>
-                    <span className="text-body font-medium text-text-primary">
-                      {goalArrival.status === 'at-goal' && 'At goal weight'}
-                      {goalArrival.status === 'wrong-direction' && (
-                        <span className="text-text-tertiary text-small">
-                          {Math.abs(goalArrival.weeklyRate) < 0.01
-                            ? 'No measurable rate — log more days'
-                            : 'Current trend is away from goal'}
-                        </span>
-                      )}
-                      {goalArrival.status === 'on-track' && (
-                        <>
-                          {format(goalArrival.arrivalDate, 'd MMMM yyyy')}
-                          <span className="text-text-tertiary text-small ml-2">
-                            ({goalArrival.weeksToGoal}&nbsp;weeks)
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </div>
-                </div>
-              </Card>
-            </section>
-          )}
-
-          {/* ─── Calories vs Target ────────────────────────────── */}
-          <section>
-            <h2 className="text-h3 text-text-primary mb-1">Calories vs target</h2>
-            <p className="text-small text-text-tertiary mb-3">
-              You hit your calorie target {chartData.filter(d => d.calories > 0 && d.calories <= (targets?.daily_calories || Infinity)).length} times in the last 30 days.
-            </p>
-            {chartData.length > 0 && (
-              <Card className="h-48 p-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <XAxis dataKey="date" stroke="var(--color-border-strong)" fontSize={12} tickMargin={8} minTickGap={20} />
-                    <YAxis stroke="var(--color-border-strong)" fontSize={12} />
-                    <Tooltip 
-                      cursor={{ fill: 'var(--color-surface-sunken)' }}
-                      contentStyle={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)', borderRadius: '8px' }}
-                    />
-                    {targets?.daily_calories && (
-                      <ReferenceLine y={targets.daily_calories} stroke="var(--color-coral-500)" strokeDasharray="3 3" />
-                    )}
-                    <Bar dataKey="calories" name="Calories" fill="var(--color-forest-500)" radius={[2, 2, 0, 0]} isAnimationActive={false} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </Card>
-            )}
-          </section>
-
-          {/* ─── Protein vs Target ─────────────────────────────── */}
-          <section>
-            <h2 className="text-h3 text-text-primary mb-1">Protein vs target</h2>
-            <p className="text-small text-text-tertiary mb-3">
-              You hit your protein target {chartData.filter(d => d.protein >= (targets?.daily_protein_g || 0)).length} times in the last 30 days.
-            </p>
-            {chartData.length > 0 && (
-              <Card className="h-48 p-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="date" stroke="var(--color-border-strong)" fontSize={12} tickMargin={8} minTickGap={20} />
-                    <YAxis stroke="var(--color-border-strong)" fontSize={12} />
-                    <Tooltip 
-                      cursor={{ fill: 'var(--color-surface-sunken)' }}
-                      contentStyle={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)', borderRadius: '8px' }}
-                    />
-                    {targets?.daily_protein_g && (
-                      <ReferenceLine y={targets.daily_protein_g} stroke="var(--color-coral-500)" strokeDasharray="3 3" />
-                    )}
-                    <Bar dataKey="protein" name="Protein (g)" fill="var(--color-forest-400)" radius={[2, 2, 0, 0]} isAnimationActive={false} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </Card>
-            )}
-          </section>
 
         </div>
       )}
