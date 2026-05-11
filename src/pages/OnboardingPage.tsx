@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
+import { NumericInput } from '@/components/NumericInput';
 import { useAuth } from '@/lib/auth';
 import { useUpdateProfile, useUpsertTargets } from '@/hooks/useProfile';
 
@@ -257,22 +258,19 @@ function Step1({ data, update }: StepProps) {
         </div>
       </div>
 
-      <Input
+      <NumericInput
         label="Height (cm)"
-        type="number"
-        inputMode="numeric"
         placeholder="175"
-        value={data.height_cm}
-        onChange={(e) => update('height_cm', e.target.value)}
+        value={data.height_cm ? Number(data.height_cm) : null}
+        onChange={(v) => update('height_cm', v?.toString() ?? '')}
+        decimalPlaces={0}
       />
-      <Input
+      <NumericInput
         label="Current weight (kg)"
-        type="number"
-        inputMode="decimal"
-        step="0.1"
         placeholder="80.0"
-        value={data.current_weight_kg}
-        onChange={(e) => update('current_weight_kg', e.target.value)}
+        value={data.current_weight_kg ? Number(data.current_weight_kg) : null}
+        onChange={(v) => update('current_weight_kg', v?.toString() ?? '')}
+        decimalPlaces={1}
       />
       <Input
         label="Date of birth"
@@ -294,14 +292,12 @@ function Step2({ data, update }: StepProps) {
           A target weight and a date. We&rsquo;ll work out the rest.
         </p>
       </div>
-      <Input
+      <NumericInput
         label="Goal weight (kg)"
-        type="number"
-        inputMode="decimal"
-        step="0.1"
         placeholder="72.0"
-        value={data.goal_weight_kg}
-        onChange={(e) => update('goal_weight_kg', e.target.value)}
+        value={data.goal_weight_kg ? Number(data.goal_weight_kg) : null}
+        onChange={(v) => update('goal_weight_kg', v?.toString() ?? '')}
+        decimalPlaces={1}
       />
       <Input
         label="Target date"
@@ -323,34 +319,30 @@ function Step3({ data, update }: StepProps) {
           Sensible defaults. Tune them later if you have specific guidance.
         </p>
       </div>
-      <Input
+      <NumericInput
         label="Daily protein (g)"
-        type="number"
-        inputMode="numeric"
-        value={data.daily_protein_g}
-        onChange={(e) => update('daily_protein_g', e.target.value)}
+        value={data.daily_protein_g ? Number(data.daily_protein_g) : null}
+        onChange={(v) => update('daily_protein_g', v?.toString() ?? '')}
+        decimalPlaces={0}
         helperText="Around 1.6 g per kg of bodyweight is a reasonable starting point."
       />
-      <Input
+      <NumericInput
         label="Daily fibre (g)"
-        type="number"
-        inputMode="numeric"
-        value={data.daily_fibre_g}
-        onChange={(e) => update('daily_fibre_g', e.target.value)}
+        value={data.daily_fibre_g ? Number(data.daily_fibre_g) : null}
+        onChange={(v) => update('daily_fibre_g', v?.toString() ?? '')}
+        decimalPlaces={0}
       />
-      <Input
+      <NumericInput
         label="Daily water (ml)"
-        type="number"
-        inputMode="numeric"
-        value={data.daily_water_ml}
-        onChange={(e) => update('daily_water_ml', e.target.value)}
+        value={data.daily_water_ml ? Number(data.daily_water_ml) : null}
+        onChange={(v) => update('daily_water_ml', v?.toString() ?? '')}
+        decimalPlaces={0}
       />
-      <Input
+      <NumericInput
         label="Daily steps"
-        type="number"
-        inputMode="numeric"
-        value={data.daily_steps}
-        onChange={(e) => update('daily_steps', e.target.value)}
+        value={data.daily_steps ? Number(data.daily_steps) : null}
+        onChange={(v) => update('daily_steps', v?.toString() ?? '')}
+        decimalPlaces={0}
       />
     </div>
   );

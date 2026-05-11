@@ -56,3 +56,10 @@ body {
 ::selection {
   background-color: rgb(var(--color-action-primary) / 0.2);
 }
+
+/* ─── Frosted glass ──────────────────────────────────────────────────────── */
+
+.glass {
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+}

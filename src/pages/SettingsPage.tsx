@@ -5,7 +5,8 @@ import { useIntegrations, useUpsertIntegration } from '@/hooks/useIntegrations';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
-import { IconSettings, IconDownload, IconLogout, IconKey, IconCheck } from '@tabler/icons-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { IconDownload, IconLogout, IconKey, IconCheck } from '@tabler/icons-react';
 
 export function SettingsPage() {
   const { user, signOut } = useAuth();
@@ -100,15 +101,25 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-64px)] sm:min-h-screen max-w-2xl mx-auto p-4 sm:p-6 pb-24 sm:pb-6 gap-6">
+    <div className="flex flex-col max-w-2xl mx-auto p-4 sm:p-6 pb-28 sm:pb-6 sm:pt-20 gap-6">
       <header className="mb-2">
-        <h1 className="text-h1 text-text-primary mb-2 flex items-center gap-2">
-          <IconSettings className="text-forest-500" size={28} /> Settings
-        </h1>
-        <p className="text-body text-text-secondary">
-          Manage your account, integrations, and data.
-        </p>
+        <p className="text-eyebrow text-text-tertiary uppercase mb-1">Account</p>
+        <h1 className="text-h1 text-text-primary">Settings</h1>
       </header>
+
+      {/* ─── Appearance ────────────────────────────────────────── */}
+      <section>
+        <h2 className="text-h3 text-text-primary mb-3">Appearance</h2>
+        <Card className="p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h3 className="text-body font-medium text-text-primary mb-0.5">Color theme</h3>
+              <p className="text-small text-text-tertiary">Light, dark, or follow your system setting.</p>
+            </div>
+            <ThemeToggle />
+          </div>
+        </Card>
+      </section>
 
       <section>
         <h2 className="text-h3 text-text-primary mb-3">Integrations</h2>

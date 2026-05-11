@@ -9,6 +9,7 @@ interface AuthState {
   loading: boolean;
   signInWithMagicLink: (email: string) => Promise<{ error: Error | null }>;
   signInWithPassword: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signInWithGoogle: () => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -54,6 +55,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
+      });
+      return { error };
+    },
+    signInWithGoogle: async () => {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin + '/auth/callback' },
       });
       return { error };
     },

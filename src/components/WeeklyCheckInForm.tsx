@@ -4,7 +4,7 @@ import { IconDeviceFloppy, IconCamera } from '@tabler/icons-react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useUpsertWeeklyCheckin, type WeeklyCheckinRow } from '@/hooks/useWeeklyCheckins';
-import { Input } from '@/components/Input';
+import { NumericInput } from '@/components/NumericInput';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 
@@ -18,17 +18,16 @@ export function WeeklyCheckInForm({ existingData, targetDate = new Date(), onSuc
   const { user } = useAuth();
   const upsert = useUpsertWeeklyCheckin();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Week start is always Monday
+
   const weekStart = startOfWeek(targetDate, { weekStartsOn: 1 });
   const weekStartStr = format(weekStart, 'yyyy-MM-dd');
 
-  const [weight, setWeight] = useState(existingData?.weight_kg?.toString() ?? '');
-  const [neck, setNeck] = useState(existingData?.neck_cm?.toString() ?? '');
-  const [chest, setChest] = useState(existingData?.chest_cm?.toString() ?? '');
-  const [waist, setWaist] = useState(existingData?.waist_cm?.toString() ?? '');
-  const [hips, setHips] = useState(existingData?.hips_cm?.toString() ?? '');
-  const [bodyFat, setBodyFat] = useState(existingData?.body_fat_pct?.toString() ?? '');
+  const [weight, setWeight] = useState<number | null>(existingData?.weight_kg ?? null);
+  const [neck, setNeck] = useState<number | null>(existingData?.neck_cm ?? null);
+  const [chest, setChest] = useState<number | null>(existingData?.chest_cm ?? null);
+  const [waist, setWaist] = useState<number | null>(existingData?.waist_cm ?? null);
+  const [hips, setHips] = useState<number | null>(existingData?.hips_cm ?? null);
+  const [bodyFat, setBodyFat] = useState<number | null>(existingData?.body_fat_pct ?? null);
   const [notes, setNotes] = useState(existingData?.notes ?? '');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -37,8 +36,7 @@ export function WeeklyCheckInForm({ existingData, targetDate = new Date(), onSuc
   function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    
-    // Validate file type and size (max 5 MB)
+
     if (!file.type.startsWith('image/')) {
       alert('Please select an image file.');
       return;
@@ -50,9 +48,7 @@ export function WeeklyCheckInForm({ existingData, targetDate = new Date(), onSuc
 
     setPhotoFile(file);
     const reader = new FileReader();
-    reader.onloadend = () => {
-      setPhotoPreview(reader.result as string);
-    };
+    reader.onloadend = () => setPhotoPreview(reader.result as string);
     reader.readAsDataURL(file);
   }
 
@@ -79,20 +75,17 @@ export function WeeklyCheckInForm({ existingData, targetDate = new Date(), onSuc
 
     try {
       let photoPath: string | null = existingData?.photo_path ?? null;
-
-      if (photoFile) {
-        photoPath = await uploadPhoto();
-      }
+      if (photoFile) photoPath = await uploadPhoto();
 
       await upsert.mutateAsync({
         user_id: user.id,
         week_start: weekStartStr,
-        weight_kg: weight ? Number(weight) : null,
-        neck_cm: neck ? Number(neck) : null,
-        chest_cm: chest ? Number(chest) : null,
-        waist_cm: waist ? Number(waist) : null,
-        hips_cm: hips ? Number(hips) : null,
-        body_fat_pct: bodyFat ? Number(bodyFat) : null,
+        weight_kg: weight,
+        neck_cm: neck,
+        chest_cm: chest,
+        waist_cm: waist,
+        hips_cm: hips,
+        body_fat_pct: bodyFat,
         photo_path: photoPath,
         notes: notes || null,
       });
@@ -115,14 +108,12 @@ export function WeeklyCheckInForm({ existingData, targetDate = new Date(), onSuc
       </header>
 
       <div className="grid grid-cols-2 gap-3">
-        <Input label="Weight (kg)" type="number" inputMode="decimal" step="0.1" value={weight} onChange={e => setWeight(e.target.value)} />
-        <Input label="Body Fat (%)" type="number" inputMode="decimal" step="0.1" value={bodyFat} onChange={e => setBodyFat(e.target.value)} />
-        
-        <Input label="Neck (cm)" type="number" inputMode="decimal" step="0.5" value={neck} onChange={e => setNeck(e.target.value)} />
-        <Input label="Chest (cm)" type="number" inputMode="decimal" step="0.5" value={chest} onChange={e => setChest(e.target.value)} />
-        
-        <Input label="Waist (cm)" type="number" inputMode="decimal" step="0.5" value={waist} onChange={e => setWaist(e.target.value)} />
-        <Input label="Hips (cm)" type="number" inputMode="decimal" step="0.5" value={hips} onChange={e => setHips(e.target.value)} />
+        <NumericInput label="Weight (kg)" value={weight} onChange={setWeight} decimalPlaces={1} />
+        <NumericInput label="Body Fat (%)" value={bodyFat} onChange={setBodyFat} decimalPlaces={1} />
+        <NumericInput label="Neck (cm)" value={neck} onChange={setNeck} decimalPlaces={1} />
+        <NumericInput label="Chest (cm)" value={chest} onChange={setChest} decimalPlaces={1} />
+        <NumericInput label="Waist (cm)" value={waist} onChange={setWaist} decimalPlaces={1} />
+        <NumericInput label="Hips (cm)" value={hips} onChange={setHips} decimalPlaces={1} />
       </div>
 
       {/* Progress photo */}
@@ -146,10 +137,7 @@ export function WeeklyCheckInForm({ existingData, targetDate = new Date(), onSuc
             <button
               type="button"
               className="absolute top-2 right-2 bg-surface-raised/80 backdrop-blur-sm rounded-full p-1.5 text-text-secondary hover:text-text-primary transition-colors"
-              onClick={() => {
-                setPhotoFile(null);
-                setPhotoPreview(null);
-              }}
+              onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
             >
               ✕
             </button>

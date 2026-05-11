@@ -1,11 +1,12 @@
 import { useState } from 'react';
+import { IconBrandGoogle } from '@tabler/icons-react';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { useAuth } from '@/lib/auth';
 import { brandMeta } from '@/tokens/brand';
 
 export function SignInPage() {
-  const { signInWithMagicLink, signInWithPassword } = useAuth();
+  const { signInWithMagicLink, signInWithPassword, signInWithGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [usePassword, setUsePassword] = useState(false);
@@ -67,6 +68,30 @@ export function SignInPage() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <Button 
+              type="button" 
+              variant="secondary" 
+              fullWidth 
+              onClick={async () => {
+                setSubmitting(true);
+                setError(null);
+                const { error: googleError } = await signInWithGoogle();
+                if (googleError) setError(googleError.message);
+                setSubmitting(false);
+              }}
+              disabled={submitting}
+              className="flex items-center gap-2"
+            >
+              <IconBrandGoogle size={20} />
+              Continue with Google
+            </Button>
+
+            <div className="flex items-center gap-3 my-2">
+              <div className="flex-1 h-px bg-border-subtle"></div>
+              <span className="text-small text-text-tertiary">OR</span>
+              <div className="flex-1 h-px bg-border-subtle"></div>
+            </div>
+
             <Input
               type="email"
               label="Email"
