@@ -1,0 +1,20 @@
+default_platform(:android)
+
+platform :android do
+  desc "Build and upload to Google Play Internal Track"
+  lane :beta do
+    # Run gradle wrapper to build the release bundle
+    gradle(
+      task: "bundle",
+      build_type: "Release"
+    )
+
+    # Upload to Google Play Internal testing track
+    upload_to_play_store(
+      track: 'internal',
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+end

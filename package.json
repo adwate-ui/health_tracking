@@ -13,9 +13,14 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:rls": "node --test supabase/tests/rls.test.mjs",
-    "rebrand:drill": "node scripts/rebrand-drill.mjs"
+    "rebrand:drill": "node scripts/rebrand-drill.mjs",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:ios": "npm run cap:sync && npx cap open ios",
+    "cap:android": "npm run cap:sync && npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/ios": "^6.2.1",
     "@supabase/supabase-js": "^2.45.0",
     "@tanstack/react-query": "^5.51.0",
     "date-fns": "^3.6.0",
@@ -25,6 +30,8 @@
     "recharts": "^2.12.7"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.1",
+    "@capacitor/core": "^6.2.1",
     "@tabler/icons-react": "^3.11.0",
     "@types/node": "^25.6.2",
     "@types/react": "^18.3.3",

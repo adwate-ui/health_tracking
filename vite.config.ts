@@ -48,6 +48,10 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      external: [
+        '@capacitor-community/health-connect',
+        '@capacitor/health-kit'
+      ],
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],

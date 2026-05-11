@@ -1,0 +1,60 @@
+name: Deploy Android (Play Store)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'android/**'
+      - 'src/**'
+      - 'capacitor.config.ts'
+      - 'package.json'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: android
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Build Web Assets and Sync
+        run: npm run cap:sync
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_VAPID_PUBLIC_KEY: ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
+          VITE_USDA_API_KEY: ${{ secrets.VITE_USDA_API_KEY }}
+
+      - name: Create Play Store Key
+        run: echo '${{ secrets.PLAY_STORE_CONFIG_JSON }}' > android/fastlane/play_store_key.json
+
+      - name: Fastlane Android Beta
+        run: bundle exec fastlane beta
+        working-directory: android
+        env:
+          # Keystore secrets for signing the App Bundle
+          ORG_GRADLE_PROJECT_MYAPP_UPLOAD_STORE_FILE: my-upload-key.keystore
+          ORG_GRADLE_PROJECT_MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}

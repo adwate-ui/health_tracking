@@ -232,6 +232,74 @@ export interface Database {
         };
         Relationships: [];
       };
+      meal_templates: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      meal_template_items: {
+        Row: {
+          id: string;
+          template_id: string;
+          user_id: string;
+          source: 'off' | 'usda' | 'manual';
+          source_id: string | null;
+          name: string;
+          grams: number;
+          calories: number | null;
+          protein_g: number | null;
+          fibre_g: number | null;
+          fat_g: number | null;
+          carbs_g: number | null;
+        };
+        Insert: {
+          id?: string;
+          template_id: string;
+          user_id: string;
+          source: 'off' | 'usda' | 'manual';
+          source_id?: string | null;
+          name: string;
+          grams: number;
+          calories?: number | null;
+          protein_g?: number | null;
+          fibre_g?: number | null;
+          fat_g?: number | null;
+          carbs_g?: number | null;
+        };
+        Update: {
+          id?: string;
+          template_id?: string;
+          user_id?: string;
+          source?: 'off' | 'usda' | 'manual';
+          source_id?: string | null;
+          name?: string;
+          grams?: number;
+          calories?: number | null;
+          protein_g?: number | null;
+          fibre_g?: number | null;
+          fat_g?: number | null;
+          carbs_g?: number | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
