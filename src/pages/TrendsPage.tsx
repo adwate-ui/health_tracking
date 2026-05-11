@@ -145,9 +145,9 @@ export function TrendsPage() {
   if (!user) return null;
 
   return (
-    <div className="px-4 py-6 max-w-2xl mx-auto pb-24 sm:pt-6">
+    <div className="px-4 py-6 max-w-2xl mx-auto pb-28 sm:pt-20">
       <header className="mb-6">
-        <p className="text-eyebrow text-text-tertiary uppercase mb-1">Reports</p>
+        <p className="text-eyebrow text-text-tertiary uppercase mb-1">Analytics</p>
         <h1 className="text-h1 text-text-primary">Trends</h1>
       </header>
 

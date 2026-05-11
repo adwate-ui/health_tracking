@@ -88,7 +88,7 @@ export function BodyPage() {
   const photosCheckins = (checkins || []).filter(c => c.photo_path != null);
 
   return (
-    <div className="px-4 py-6 max-w-2xl mx-auto pb-24 sm:pt-6">
+    <div className="px-4 py-6 max-w-2xl mx-auto pb-28 sm:pt-20">
       <header className="mb-6 flex justify-between items-end">
         <div>
           <p className="text-eyebrow text-text-tertiary uppercase mb-1">Body & Measurements</p>
