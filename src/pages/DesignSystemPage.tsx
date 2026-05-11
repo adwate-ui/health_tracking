@@ -124,10 +124,10 @@ export function DesignSystemPage() {
 
       <Section title=" " subtitle="Metric cards">
         <div className="grid grid-cols-2 gap-3 max-w-md">
-          <MetricCard label="Calories" value="1,743" unit="of 2,000 kcal" progress={{ current: 1743, target: 2000 }} state="on-track" />
-          <MetricCard label="Protein" value="105" unit="of 120 g" progress={{ current: 105, target: 120 }} state="approaching" />
-          <MetricCard label="Fibre" value="22" unit="of 30 g" progress={{ current: 22, target: 30 }} state="below" />
-          <MetricCard label="Steps" value="11,200" unit="of 10,000" progress={{ current: 11200, target: 10000 }} state="on-track" />
+          <MetricCard label="Calories" value={1743} targetLabel="of 2,000 kcal" progress={{ current: 1743, target: 2000 }} state="on-track" />
+          <MetricCard label="Protein" value={105} targetLabel="of 120 g" progress={{ current: 105, target: 120 }} state="approaching" />
+          <MetricCard label="Fibre" value={22} targetLabel="of 30 g" progress={{ current: 22, target: 30 }} state="below" />
+          <MetricCard label="Steps" value={11200} targetLabel="of 10,000" progress={{ current: 11200, target: 10000 }} state="on-track" />
         </div>
       </Section>
 
